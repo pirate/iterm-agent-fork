@@ -4,8 +4,8 @@ One-key iTerm2 forking and handoff for coding-agent CLIs.
 
 This script installs two global iTerm2 shortcuts:
 
-- `Cmd+Shift+F`: split the current pane and fork/resume the active agent in the same CLI.
-- `Cmd+Shift+G`: split the current pane, show a small target-agent prompt, then either fork natively for the same agent or use `casr` for cross-agent transfer.
+- `Cmd+Shift+F`: split the current pane and fork/resume the active agent in the same harness (e.g. codex -> codex fork).
+- `Cmd+Shift+G`: split the current pane, show a small prompt to choose which harness you want to fork to (e.g. codex, claude, gemini, opencode, etc.), using `casr` for cross-agent session history transfer.
 
 It currently detects Codex, Claude Code, Gemini CLI, and opencode by looking at the foreground process and its open session log.
 
