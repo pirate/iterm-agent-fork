@@ -1,0 +1,23 @@
+README.md
+  s_92308da0eb1159::t_04196cb8797aa0 1-116
+fork_agent_here.py
+  s_92308da0eb1159::t_04196cb8797aa0 1-816
+.gitignore
+  s_92308da0eb1159::t_04196cb8797aa0 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.1",
+  "base_commit_sha": "157afa7a37b83f93e090e14d46b365ff39ae56d2",
+  "prompts": {},
+  "sessions": {
+    "s_92308da0eb1159": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e0354-b786-75d3-93f4-55daefc0b54f",
+        "model": "gpt-5.5"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
