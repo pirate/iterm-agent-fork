@@ -9,6 +9,9 @@ This script installs two global iTerm2 shortcuts:
 
 It currently detects Codex, Claude Code, Gemini CLI, and opencode by looking at the foreground process and its open session log.
 
+<img width="1284" height="344" alt="image" src="https://github.com/user-attachments/assets/7793c104-8d66-49d9-b24d-642a38be3ca9" />
+
+
 ## Behavior
 
 Native same-agent forking does not use `casr`:
@@ -51,6 +54,11 @@ Install the iTerm2 Python runtime if you have not already:
 1. Open iTerm2.
 2. Open `Scripts > Manage > Install Python Runtime`.
 3. Allow iTerm2 to enable the Python API.
+
+<img width="897" height="555" alt="Screenshot 2026-05-07 at 12 46 09 PM" src="https://github.com/user-attachments/assets/b9177854-e072-431f-b712-272d952cb2fe" />
+
+<img width="513" height="119" alt="Screenshot 2026-05-07 at 12 46 55 PM" src="https://github.com/user-attachments/assets/9df3e41d-e311-4d41-84d1-05a607bdc7bd" />
+
 
 Copy the script into your iTerm2 scripts `AutoLaunch` folder. For the default iTerm2 scripts location:
 
