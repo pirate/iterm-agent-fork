@@ -33,32 +33,47 @@ If `casr` is missing or conversion fails, the script falls back to a prompt-base
 ## Requirements
 
 - macOS with iTerm2
-- iTerm2 Python API runtime installed
-- Python 3 in the iTerm2 script runtime
 - The agent CLIs you want to use, such as `codex`, `claude`, `gemini`, or `opencode`
 - Optional but recommended for cross-agent handoff: `casr`
 
-The script always invokes `python3`, never bare `python`.
+The script always invokes `python3`, never bare `python`. The automated installer enables the iTerm2 Python API and launches the script so iTerm2 can install or initialize its Python runtime when needed.
 
 ## Install
 
 Clone the repo:
 
 ```sh
-git clone git@github.com:pirate/iterm-agent-fork.git
+git clone https://github.com/pirate/iterm-agent-fork.git
 cd iterm-agent-fork
 ```
 
-Install the iTerm2 Python runtime if you have not already:
+### Automated install
+
+Run the setup helper:
+
+```sh
+skills/install-iterm-agent-fork/scripts/setup_iterm_agent_fork.sh
+```
+
+The helper enables the iTerm2 Python API, installs the script into iTerm2's default `AutoLaunch` directory, and launches the API script. Launching the script lets iTerm2 install or finish installing its Python runtime when needed.
+
+```text
+$HOME/Library/Application Support/iTerm2/Scripts/AutoLaunch/fork_agent_here.py
+```
+
+Most users do not need to configure iTerm2's custom scripts folder. If you already use one, pass it explicitly with `--scripts-dir "$CUSTOM_ITERM_SCRIPTS_DIR"`. Use `--no-casr` to skip installing `casr`, `--no-configure-iterm` to avoid writing iTerm2 preferences, or `--no-launch` to skip launching the API script.
+
+### Manual install
+
+If you are not using the setup helper, install the iTerm2 Python runtime if you have not already:
 
 1. Open iTerm2.
 2. Open `Scripts > Manage > Install Python Runtime`.
 3. Allow iTerm2 to enable the Python API.
 
-<img width="897" height="555" alt="Screenshot 2026-05-07 at 12 46 09 PM" src="https://github.com/user-attachments/assets/b9177854-e072-431f-b712-272d952cb2fe" />
+<img width="897" height="555" alt="Screenshot 2026-05-07 at 12 46 09 PM" src="https://github.com/user-attachments/assets/b9177854-e072-431f-b712-272d952cb2fe" />
 
-<img width="513" height="119" alt="Screenshot 2026-05-07 at 12 46 55 PM" src="https://github.com/user-attachments/assets/9df3e41d-e311-4d41-84d1-05a607bdc7bd" />
-
+<img width="513" height="119" alt="Screenshot 2026-05-07 at 12 46 55 PM" src="https://github.com/user-attachments/assets/9df3e41d-e311-4d41-84d1-05a607bdc7bd" />
 
 Copy the script into your iTerm2 scripts `AutoLaunch` folder. For the default iTerm2 scripts location:
 

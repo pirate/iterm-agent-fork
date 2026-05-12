@@ -1,0 +1,4 @@
+interface:
+  display_name: "Install iTerm Agent Fork"
+  short_description: "Install and launch iTerm agent forking"
+  default_prompt: "Use $install-iterm-agent-fork to install and set up pirate/iterm-agent-fork locally."
