@@ -33,6 +33,10 @@ GEMINI_SESSION_PATH_RE = re.compile(r"(/.*?/\.gemini/tmp/.*/chats/session-[^\s]+
 OPENCODE_MESSAGE_PATH_RE = re.compile(
     r"(/.*?/\.local/share/opencode/storage/message/(ses_[^/\s]+)/[^/\s]+\.json)$"
 )
+# Matches the codex executable as a command token regardless of where the npm
+# package places its binary (older builds: .../vendor/<triple>/codex/codex,
+# newer builds: .../vendor/<triple>/bin/codex), including the node wrapper.
+CODEX_COMMAND_RE = re.compile(r"(^|/)codex(\s|$)")
 MAX_HANDOFF_CHARS = 50000
 MAX_ENTRY_CHARS = 3000
 MAX_TRANSCRIPT_ITEMS = 80
@@ -688,7 +692,7 @@ esac
 
 def agent_for_process(process):
     command = process["command"]
-    if "/codex/codex" in command or " codex " in f" {command} " or command.endswith("/codex"):
+    if CODEX_COMMAND_RE.search(command):
         session = codex_session_from_pid(process["pid"])
         if session:
             return {
@@ -749,7 +753,7 @@ async def agent_for_iterm_session(session, cwd):
 
     tty = await session.async_get_variable("tty")
     processes = foreground_processes_for_tty(tty)
-    processes.sort(key=lambda p: ("/codex/codex" not in p["command"], p["pid"]))
+    processes.sort(key=lambda p: (not CODEX_COMMAND_RE.search(p["command"]), p["pid"]))
     for process in processes:
         agent = agent_for_process(process)
         if agent:
