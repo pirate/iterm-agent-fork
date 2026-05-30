@@ -790,6 +790,8 @@ async def main(connection):
             return
 
         child = await session.async_split_pane(vertical=True)
+        # Focus the new pane so the spawned agent has keyboard input.
+        await child.async_activate()
 
         command = f"cd {shlex.quote(cwd)} && {agent['command']}\n"
         await child.async_send_text(command)
@@ -814,6 +816,10 @@ async def main(connection):
             return
 
         child = await session.async_split_pane(vertical=True)
+        # Focus the new pane so the "Choose target agent" prompt receives the
+        # user's keystrokes (the launcher blocks on `read`; without focus, input
+        # goes to the original pane and the menu appears frozen).
+        await child.async_activate()
         launcher = write_handoff_launcher(cwd, agent)
         await child.async_send_text(f"{shlex.quote(launcher)}\n")
 
