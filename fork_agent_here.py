@@ -648,7 +648,12 @@ run_casr_handoff() {{
   }}
 
   printf 'Converting with casr...\\n'
-  casr_output=$("$casr_bin" resume "$target" "$source_ref" --source "$source_path" --json 2>&1)
+  # Budget the transferred context so huge sessions (which the source agent has
+  # already compacted many times) fork cleanly instead of blowing the target's
+  # size/context limits. casr honors the source's compaction and trims to these
+  # caps; override via env if you want more/less. Older casr builds without these
+  # flags exit non-zero here and fall through to the prompt handoff below.
+  casr_output=$("$casr_bin" resume "$target" "$source_ref" --source "$source_path" --max-context-tokens "${{CASR_MAX_CONTEXT_TOKENS:-200000}}" --max-tool-output "${{CASR_MAX_TOOL_OUTPUT:-4000}}" --json 2>&1)
   casr_status=$?
   if [ "$casr_status" -ne 0 ]; then
     printf 'casr conversion failed; falling back to prompt handoff.\\n'
@@ -785,6 +790,8 @@ async def main(connection):
             return
 
         child = await session.async_split_pane(vertical=True)
+        # Focus the new pane so the spawned agent has keyboard input.
+        await child.async_activate()
 
         command = f"cd {shlex.quote(cwd)} && {agent['command']}\n"
         await child.async_send_text(command)
@@ -809,6 +816,10 @@ async def main(connection):
             return
 
         child = await session.async_split_pane(vertical=True)
+        # Focus the new pane so the "Choose target agent" prompt receives the
+        # user's keystrokes (the launcher blocks on `read`; without focus, input
+        # goes to the original pane and the menu appears frozen).
+        await child.async_activate()
         launcher = write_handoff_launcher(cwd, agent)
         await child.async_send_text(f"{shlex.quote(launcher)}\n")
 
