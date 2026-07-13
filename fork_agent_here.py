@@ -100,6 +100,13 @@ async def ensure_key_binding(connection):
     await iterm2.async_set_preference(connection, "GlobalKeyMap", key_map)
 
 
+async def disable_application_key_reporting(session):
+    # Codex's Kitty keyboard mode can be left enabled in a forked iTerm pane.
+    # Keep the override session-local so existing profile settings stay intact.
+    profile = iterm2.LocalWriteOnlyProfile({"Allow modifyOtherKeys": False})
+    await session.async_set_profile_properties(profile)
+
+
 def run_command(args):
     return subprocess.run(
         args,
@@ -785,6 +792,8 @@ async def main(connection):
             return
 
         child = await session.async_split_pane(vertical=True)
+        if agent["name"] == "codex":
+            await disable_application_key_reporting(child)
 
         command = f"cd {shlex.quote(cwd)} && {agent['command']}\n"
         await child.async_send_text(command)
