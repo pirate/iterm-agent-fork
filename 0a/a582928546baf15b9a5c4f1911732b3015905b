@@ -1,0 +1,19 @@
+fork_agent_here.py
+  s_c376c1ecc678f0::t_3cdbb6da46c92f 99-105,791-792
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.12",
+  "base_commit_sha": "0aa582928546baf15b9a5c4f1911732b3015905b",
+  "prompts": {},
+  "sessions": {
+    "s_c376c1ecc678f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e58dc-6fb1-7080-ba30-dcea1f22670a",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "Nick Sweeting <git@sweeting.me>"
+    }
+  }
+}
