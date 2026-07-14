@@ -158,6 +158,7 @@ scripts_dir="${scripts_dir/#\~/$HOME}"
 autolaunch_dir="${scripts_dir%/}/AutoLaunch"
 source_script="${repo_dir%/}/fork_agent_here.py"
 installed_script="${autolaunch_dir}/fork_agent_here.py"
+legacy_installed_script="${autolaunch_dir}/iterm_agent_fork.py"
 
 if [[ ! -d "$repo_dir/.git" ]]; then
   if [[ -e "$repo_dir" ]]; then
@@ -175,6 +176,16 @@ fi
 
 run python3 -m py_compile "$source_script"
 run mkdir -p "$autolaunch_dir"
+
+if [[ "$launch_script" -eq 1 ]]; then
+  stop_existing_api_script "$installed_script"
+  stop_existing_api_script "$legacy_installed_script"
+fi
+
+if [[ -f "$legacy_installed_script" ]]; then
+  legacy_backup="${legacy_installed_script}.bak.$(date +%Y%m%d-%H%M%S)"
+  run mv "$legacy_installed_script" "$legacy_backup"
+fi
 
 if [[ -f "$installed_script" ]] && ! cmp -s "$source_script" "$installed_script"; then
   backup="${installed_script}.bak.$(date +%Y%m%d-%H%M%S)"
@@ -225,19 +236,18 @@ if [[ "$install_casr" -eq 1 ]]; then
 fi
 
 if [[ "$launch_script" -eq 1 ]]; then
-  stop_existing_api_script "$installed_script"
   run osascript -e "tell application \"iTerm2\" to launch API script named \"$installed_script\""
 fi
 
 if [[ "$dry_run" -eq 0 ]]; then
-  if defaults read com.googlecode.iterm2 GlobalKeyMap 2>/dev/null | grep -q 'fork_agent_here()'; then
-    echo "Verified iTerm key binding for fork_agent_here()."
+  if defaults read com.googlecode.iterm2 GlobalKeyMap 2>/dev/null | grep -q 'fork_agent_here_v2()'; then
+    echo "Verified iTerm key binding for fork_agent_here_v2()."
   else
     echo "iTerm key binding not visible yet. If the Python runtime just installed, rerun after it finishes." >&2
   fi
 
-  if defaults read com.googlecode.iterm2 GlobalKeyMap 2>/dev/null | grep -q 'handoff_agent_here()'; then
-    echo "Verified iTerm key binding for handoff_agent_here()."
+  if defaults read com.googlecode.iterm2 GlobalKeyMap 2>/dev/null | grep -q 'handoff_agent_here_v2()'; then
+    echo "Verified iTerm key binding for handoff_agent_here_v2()."
   else
     echo "iTerm handoff key binding not visible yet. If the Python runtime just installed, rerun after it finishes." >&2
   fi

@@ -9,6 +9,8 @@ This script installs two global iTerm2 shortcuts:
 
 It currently detects Codex, Claude Code, Gemini CLI, and opencode by looking at the foreground process and its open session log.
 
+The AutoLaunch script also runs a local tab-status daemon. It detects the foreground agent in each iTerm TTY and applies a session-local tab color: orange for Codex, blue for Claude, green for Gemini, and red for opencode. The iTerm script verifies the daemon's PID and agent identity against the live foreground process before applying a color, so stale TTY data is ignored.
+
 <img width="1284" height="344" alt="image" src="https://github.com/user-attachments/assets/7793c104-8d66-49d9-b24d-642a38be3ca9" />
 
 
@@ -133,9 +135,10 @@ The handoff menu accepts numbers or names:
 
 - The script writes iTerm2 global key bindings for `Cmd+Shift+F` and `Cmd+Shift+G`.
 - If those shortcuts already do something else in your iTerm config, change the key constants near the top of `fork_agent_here.py`.
+- The daemon writes a generic, local snapshot to `$HOME/.cache/iterm-agent-fork/tab-status.json`. It contains a version, timestamp, and foreground-agent identity keyed by TTY; other local tools may consume it, but the iTerm script does not depend on any external status producer.
 - Cross-agent conversion quality depends on the source and target session formats supported by `casr`.
 - Hidden reasoning is not transferred. For fallback prompt handoff, the script reads visible session logs, preserves compaction summaries where possible, and includes current git status.
 
 ## Uninstall
 
-Remove the script from your `AutoLaunch` folder and restart iTerm2. If you want to remove the global key bindings too, delete the `fork_agent_here()` and `handoff_agent_here()` entries from iTerm2 preferences or bind those shortcuts to something else.
+Remove the script from your `AutoLaunch` folder and restart iTerm2. If you want to remove the global key bindings too, delete the `fork_agent_here_v2()` and `handoff_agent_here_v2()` entries from iTerm2 preferences or bind those shortcuts to something else.

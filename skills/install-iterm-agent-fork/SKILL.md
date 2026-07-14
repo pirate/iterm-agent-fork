@@ -33,7 +33,7 @@ osascript -e 'tell application "iTerm2" to launch API script named "'"$INSTALLED
    - `python3 -m py_compile "$INSTALLED_SCRIPT"`
    - `defaults read com.googlecode.iterm2 EnableAPIServer` reports enabled
    - `~/.cargo/bin/casr --version` when `casr` was installed
-   - `defaults read com.googlecode.iterm2 GlobalKeyMap` contains `fork_agent_here()` and `handoff_agent_here()` after the script has run
+   - `defaults read com.googlecode.iterm2 GlobalKeyMap` contains `fork_agent_here_v2()` and `handoff_agent_here_v2()` after the script has run
    - `ps ax -o pid=,command= | rg 'fork_agent_here.py'` shows the iTerm-managed script process when iTerm is running
 
 ## Automation Script

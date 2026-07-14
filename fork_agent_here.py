@@ -1,26 +1,36 @@
 #!/usr/bin/env python3
+import asyncio
+import fcntl
+import sys
+
+sys.dont_write_bytecode = True
+
 import json
 import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
-
-import iterm2
 
 
 KEY_ACTION_INVOKE_SCRIPT_FUNCTION = 60
-KEY_CMD_SHIFT_F = "0x66-0x120000-0x3"
-KEY_CMD_SHIFT_F_LEGACY = "0x66-0x120000"
-KEY_CMD_SHIFT_UPPER_F = "0x46-0x120000-0x3"
-KEY_CMD_SHIFT_UPPER_F_LEGACY = "0x46-0x120000"
-KEY_CMD_SHIFT_G = "0x67-0x120000-0x3"
-KEY_CMD_SHIFT_G_LEGACY = "0x67-0x120000"
-KEY_CMD_SHIFT_UPPER_G = "0x47-0x120000-0x3"
-KEY_CMD_SHIFT_UPPER_G_LEGACY = "0x47-0x120000"
-RPC_INVOCATION = "fork_agent_here()"
-RPC_HANDOFF_INVOCATION = "handoff_agent_here()"
+FORK_KEY_BINDINGS = (
+    "0x66-0x120000-0x3",
+    "0x66-0x120000",
+    "0x46-0x120000-0x3",
+    "0x46-0x120000",
+)
+HANDOFF_KEY_BINDINGS = (
+    "0x67-0x120000-0x3",
+    "0x67-0x120000",
+    "0x47-0x120000-0x3",
+    "0x47-0x120000",
+)
+RPC_INVOCATION = "fork_agent_here_v2()"
+RPC_HANDOFF_INVOCATION = "handoff_agent_here_v2()"
 UUID_RE = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 CODEX_SESSION_ID_RE = re.compile(
     r"/\.codex/sessions/.*/rollout-[^-]+-\d\d-\d\dT\d\d-\d\d-\d\d-"
@@ -46,6 +56,163 @@ SKIPPED_USER_PREFIXES = (
     "# CLAUDE.md instructions",
     "# GEMINI.md instructions",
 )
+STATUS_DIRECTORY = Path.home() / ".cache/iterm-agent-fork"
+TAB_STATUS_PATH = STATUS_DIRECTORY / "tab-status.json"
+TAB_STATUS_LOCK_PATH = STATUS_DIRECTORY / "tab-status.lock"
+TAB_STATUS_DAEMON_ARG = "--tab-status-daemon"
+TAB_STATUS_ONCE_ARG = "--tab-status-once"
+TAB_STATUS_INTERVAL_SECONDS = 0.5
+TAB_STATUS_MAX_AGE_SECONDS = 2
+TAB_COLORS = {
+    "codex": (255, 145, 35),
+    "claude": (45, 115, 255),
+    "gemini": (144, 238, 144),
+    "opencode": (255, 45, 45),
+}
+
+
+def agent_name_for_command(command):
+    if CODEX_COMMAND_RE.search(command):
+        return "codex"
+    if (
+        "/claude" in command
+        or " claude " in f" {command} "
+        or command.endswith("/claude")
+        or "com.anthropic.claude-code" in command
+    ):
+        return "claude"
+    if " gemini " in f" {command} " or command.endswith("/gemini"):
+        return "gemini"
+    if " opencode " in f" {command} " or command.endswith("/opencode"):
+        return "opencode"
+    return None
+
+
+def foreground_agent_identities():
+    identities = {}
+    rows = run_command(["ps", "-axo", "pid=,tty=,stat=,command="]).splitlines()
+    for row in rows:
+        parts = row.strip().split(None, 3)
+        if len(parts) < 4:
+            continue
+        pid, tty_name, stat, command = parts
+        if tty_name == "??" or "+" not in stat:
+            continue
+        agent = agent_name_for_command(command)
+        if agent is None:
+            continue
+        identities.setdefault(
+            f"/dev/{tty_name}",
+            {"agent": agent, "pid": pid, "command": command},
+        )
+    return identities
+
+
+def tab_status_snapshot():
+    return {
+        "version": 1,
+        "updated": time.time(),
+        "sessions": foreground_agent_identities(),
+    }
+
+
+def write_tab_status_snapshot(snapshot):
+    STATUS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    temporary_path = TAB_STATUS_PATH.with_suffix(f".{os.getpid()}.tmp")
+    temporary_path.write_text(json.dumps(snapshot, separators=(",", ":")), encoding="utf-8")
+    temporary_path.replace(TAB_STATUS_PATH)
+
+
+def run_tab_status_daemon():
+    STATUS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    with open(TAB_STATUS_LOCK_PATH, "w", encoding="utf-8") as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return
+        while True:
+            write_tab_status_snapshot(tab_status_snapshot())
+            time.sleep(TAB_STATUS_INTERVAL_SECONDS)
+
+
+def ensure_tab_status_daemon():
+    subprocess.Popen(
+        [sys.executable, str(Path(__file__).resolve()), TAB_STATUS_DAEMON_ARG],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def read_tab_statuses():
+    try:
+        payload = json.loads(TAB_STATUS_PATH.read_text(encoding="utf-8"))
+        if time.time() - float(payload["updated"]) > TAB_STATUS_MAX_AGE_SECONDS:
+            return {}
+        sessions = payload["sessions"]
+        return sessions if isinstance(sessions, dict) else {}
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+
+
+def tab_status_identity_matches(tty, status):
+    if not tty or not isinstance(status, dict):
+        return False
+    for process in foreground_processes_for_tty(tty):
+        if (
+            process["pid"] == str(status.get("pid"))
+            and agent_name_for_command(process["command"]) == status.get("agent")
+        ):
+            return True
+    return False
+
+
+async def set_session_tab_color(session, agent):
+    profile = iterm2.LocalWriteOnlyProfile()
+    enabled = agent is not None
+    profile.set_use_tab_color(enabled)
+    profile.set_use_tab_color_light(enabled)
+    profile.set_use_tab_color_dark(enabled)
+    if enabled:
+        color = iterm2.Color(*TAB_COLORS[agent])
+        profile.set_tab_color(color)
+        profile.set_tab_color_light(color)
+        profile.set_tab_color_dark(color)
+    await session.async_set_profile_properties(profile)
+
+
+async def sync_tab_colors(app):
+    applied = {}
+    while True:
+        try:
+            statuses = read_tab_statuses()
+            visible = set()
+            for window in app.windows:
+                for tab in window.tabs:
+                    for session in tab.sessions:
+                        tty = await session.async_get_variable("tty")
+                        status = statuses.get(tty)
+                        agent = (
+                            status.get("agent")
+                            if status and tab_status_identity_matches(tty, status)
+                            else None
+                        )
+                        session_id = session.session_id
+                        visible.add(session_id)
+                        if agent is not None or session_id in applied:
+                            if applied.get(session_id) != agent:
+                                await set_session_tab_color(session, agent)
+                                if agent is None:
+                                    applied.pop(session_id, None)
+                                else:
+                                    applied[session_id] = agent
+            for session_id in list(applied):
+                if session_id not in visible:
+                    applied.pop(session_id, None)
+        except Exception as error:
+            print("tab color sync:", error)
+        await asyncio.sleep(TAB_STATUS_INTERVAL_SECONDS)
 
 
 class PreferenceKey:
@@ -71,32 +238,10 @@ async def ensure_key_binding(connection):
         "Apply Mode": 0,
     }
 
-    for key in (
-        KEY_CMD_SHIFT_F,
-        KEY_CMD_SHIFT_F_LEGACY,
-        KEY_CMD_SHIFT_UPPER_F,
-        KEY_CMD_SHIFT_UPPER_F_LEGACY,
-    ):
+    for key in FORK_KEY_BINDINGS:
         key_map[key] = action
-    for key in (
-        KEY_CMD_SHIFT_G,
-        KEY_CMD_SHIFT_G_LEGACY,
-        KEY_CMD_SHIFT_UPPER_G,
-        KEY_CMD_SHIFT_UPPER_G_LEGACY,
-    ):
+    for key in HANDOFF_KEY_BINDINGS:
         key_map[key] = handoff_action
-    for key in (
-        "0x66-0x180000-0x3",
-        "0x66-0x180000",
-        "0x46-0x180000-0x3",
-        "0x46-0x180000",
-        "0x66-0x1a0000-0x3",
-        "0x66-0x1a0000",
-        "0x46-0x1a0000-0x3",
-        "0x46-0x1a0000",
-    ):
-        if key_map.get(key, {}).get("Text") == RPC_HANDOFF_INVOCATION:
-            key_map.pop(key, None)
     await iterm2.async_set_preference(connection, "GlobalKeyMap", key_map)
 
 
@@ -105,6 +250,13 @@ async def disable_application_key_reporting(session):
     # Keep the override session-local so existing profile settings stay intact.
     profile = iterm2.LocalWriteOnlyProfile({"Allow modifyOtherKeys": False})
     await session.async_set_profile_properties(profile)
+
+
+def codex_executable():
+    standalone = Path.home() / ".local/bin/codex"
+    if standalone.is_file() and os.access(standalone, os.X_OK):
+        return str(standalone)
+    return shutil.which("codex") or "codex"
 
 
 def run_command(args):
@@ -699,22 +851,21 @@ esac
 
 def agent_for_process(process):
     command = process["command"]
-    if CODEX_COMMAND_RE.search(command):
+    agent_name = agent_name_for_command(command)
+    if agent_name == "codex":
         session = codex_session_from_pid(process["pid"])
         if session:
             return {
                 "name": "codex",
                 "session_id": session["session_id"],
                 "path": session["path"],
-                "command": f"codex --yolo fork {shlex.quote(session['session_id'])}",
+                "command": (
+                    f"{shlex.quote(codex_executable())} --yolo fork "
+                    f"{shlex.quote(session['session_id'])}"
+                ),
             }
 
-    if (
-        "/claude" in command
-        or " claude " in f" {command} "
-        or command.endswith("/claude")
-        or "com.anthropic.claude-code" in command
-    ):
+    if agent_name == "claude":
         session = claude_session_from_pid(process["pid"])
         if session:
             return {
@@ -727,7 +878,7 @@ def agent_for_process(process):
                 ),
             }
 
-    if " gemini " in f" {command} " or command.endswith("/gemini"):
+    if agent_name == "gemini":
         session = gemini_session_from_pid(process["pid"])
         if session:
             return {
@@ -737,7 +888,7 @@ def agent_for_process(process):
                 "command": f"gemini --yolo --resume {shlex.quote(session['session_id'])}",
             }
 
-    if " opencode " in f" {command} " or command.endswith("/opencode"):
+    if agent_name == "opencode":
         session = opencode_session_from_pid(process["pid"])
         if session:
             return {
@@ -776,30 +927,42 @@ async def agent_for_iterm_session(session, cwd):
 async def main(connection):
     app = await iterm2.async_get_app(connection)
     await ensure_key_binding(connection)
+    ensure_tab_status_daemon()
+    asyncio.ensure_future(sync_tab_colors(app))
+    forks_in_progress = set()
 
     @iterm2.RPC
-    async def fork_agent_here(session_id=iterm2.Reference("id")):
+    async def fork_agent_here_v2(session_id=iterm2.Reference("id")):
+        if session_id in forks_in_progress:
+            return
+
         session = app.get_session_by_id(session_id)
         if session is None:
             return
 
-        cwd = await session.async_get_variable("path") or "~"
-        agent = await agent_for_iterm_session(session, cwd)
-        if agent is None:
-            await session.async_send_text(
-                "\n# fork_agent_here: could not find an active Codex, Claude, Gemini, or opencode session for this pane\n"
-            )
-            return
+        forks_in_progress.add(session_id)
+        try:
+            cwd = await session.async_get_variable("path") or "~"
+            agent = await agent_for_iterm_session(session, cwd)
+            if agent is None:
+                await session.async_send_text(
+                    "\n# fork_agent_here: could not find an active Codex, Claude, Gemini, or opencode session for this pane\n"
+                )
+                return
 
-        child = await session.async_split_pane(vertical=True)
-        if agent["name"] == "codex":
-            await disable_application_key_reporting(child)
+            child = await session.async_split_pane(vertical=True)
+            if agent["name"] == "codex":
+                await disable_application_key_reporting(child)
 
-        command = f"cd {shlex.quote(cwd)} && {agent['command']}\n"
-        await child.async_send_text(command)
+            # iTerm completes shell and PTY setup asynchronously after creating a split.
+            await asyncio.sleep(0.25)
+            command = f"cd {shlex.quote(cwd)} && {agent['command']}\n"
+            await child.async_send_text(command)
+        finally:
+            forks_in_progress.discard(session_id)
 
     @iterm2.RPC
-    async def handoff_agent_here(session_id=iterm2.Reference("id")):
+    async def handoff_agent_here_v2(session_id=iterm2.Reference("id")):
         session = app.get_session_by_id(session_id)
         if session is None:
             return
@@ -821,9 +984,16 @@ async def main(connection):
         launcher = write_handoff_launcher(cwd, agent)
         await child.async_send_text(f"{shlex.quote(launcher)}\n")
 
-    await fork_agent_here.async_register(connection, timeout=10)
-    await handoff_agent_here.async_register(connection, timeout=10)
+    await fork_agent_here_v2.async_register(connection, timeout=10)
+    await handoff_agent_here_v2.async_register(connection, timeout=10)
 
 
 if __name__ == "__main__":
-    iterm2.run_forever(main)
+    if TAB_STATUS_DAEMON_ARG in sys.argv:
+        run_tab_status_daemon()
+    elif TAB_STATUS_ONCE_ARG in sys.argv:
+        print(json.dumps(tab_status_snapshot(), indent=2))
+    else:
+        import iterm2
+
+        iterm2.run_forever(main)
